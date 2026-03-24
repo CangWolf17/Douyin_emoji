@@ -1,0 +1,73 @@
+name: Nuitka Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*' # 当用户打 v1.0, v1.1 这种 tag 时触发
+  workflow_dispatch: # 允许手动在 GitHub Action 页面触发构建
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # Nuitka 编译是系统相关的，我们需要在对应的操作系统上跑构建任务
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        include:
+          - os: windows-latest
+            suffix: ".exe"
+            compiler: "mingw64"
+          - os: ubuntu-latest
+            suffix: ""
+            compiler: "gcc"
+          - os: macos-latest
+            suffix: ""
+            compiler: "clang"
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. 设置 Python 环境
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      # 3. 安装项目第三方依赖
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4 pillow tqdm nuitka
+
+      # 4. 初始化编译器环境 (特别是对于 macOS 和 Windows)
+      - name: Set up Compiler
+        if: matrix.os == 'windows-latest'
+        uses: msys2/setup-msys2@v2
+        with:
+          install: mingw-w64-x86_64-gcc
+
+      # 5. 执行 Nuitka 构建
+      - name: Build with Nuitka
+        run: |
+          # 针对单文件构建：--onefile
+          # 隐藏命令行窗口（如果是纯图形程序）：--enable-plugin=tk-inter (但我们这里是 CLI，不启用)
+          python -m nuitka --onefile --output-dir=build_out main.py
+
+      # 6. 重命名二进制文件（统一格式：douyin_emoji-windows.exe）
+      - name: Rename Output Artifact
+        run: |
+          cd build_out
+          mv main${{ matrix.suffix }} douyin_emoji-${{ runner.os }}${{ matrix.suffix }}
+
+      # 7. 上传构建产物作为 Release 内容
+      - name: Release Artifacts
+        uses: softprops/action-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: build_out/douyin_emoji-${{ runner.os }}${{ matrix.suffix }}
+          body: "Auto-generated release from Nuitka Build on ${{ runner.os }}."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
