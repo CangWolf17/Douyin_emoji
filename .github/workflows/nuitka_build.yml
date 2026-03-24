@@ -41,7 +41,7 @@ jobs:
       # 执行 Nuitka 构建 (增加 --standalone 确保独立性)
       - name: Build with Nuitka
         run: |
-          python -m nuitka --onefile --output-dir=build_out main.py
+          python -m nuitka --onefile --assume-yes-for-downloads --output-dir=build_out main.py
 
       # 重命名文件以便区分
       - name: Rename Output Artifact
