@@ -3,11 +3,11 @@ name: Nuitka Build and Release
 on:
   push:
     tags:
-      - 'v*' # 触发条件：推送以 v 开头的标签，如 v1.0
-  workflow_dispatch: # 允许在 Actions 页面点击 "Run workflow" 手动触发
+      - 'v*'
+  workflow_dispatch:
 
 permissions:
-  contents: write # 核心修正：允许 Action 写入仓库内容并创建 Release
+  contents: write
 
 jobs:
   build:
@@ -32,33 +32,21 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          cache: 'pip'
 
       - name: Install dependencies
         run: |
-          pip install requests beautifulsoup4 pillow tqdm nuitka
+          pip install requests beautifulsoup4 pillow tqdm nuitka zstandard
 
-      # 执行 Nuitka 构建 (增加 --standalone 确保独立性)
+      # 核心优化：直接使用 -o 命名，完美避开所有系统重命名的坑
       - name: Build with Nuitka
         run: |
-          python -m nuitka --onefile --assume-yes-for-downloads --output-dir=build_out main.py
+          python -m nuitka --onefile --assume-yes-for-downloads --disable-ccache --jobs=2 -o douyin_emoji-${{ runner.os }}${{ matrix.suffix }} --output-dir=build_out main.py
 
-      # 重命名文件以便区分
-      - name: Rename Output Artifact
-        shell: bash # 统一使用 bash 处理路径
-        run: |
-          cd build_out
-          # 寻找生成的可执行文件并重命名
-          FILE_NAME=$(ls main${{ matrix.suffix }} 2>/dev/null || ls main 2>/dev/null)
-          mv "$FILE_NAME" "douyin_emoji-${{ runner.os }}${{ matrix.suffix }}"
-
-      # 核心修正：使用兼容性更好的 Release Action
       - name: Create or Update Release
         uses: ncipollo/release-action@v1
         with:
           artifacts: "build_out/douyin_emoji-${{ runner.os }}${{ matrix.suffix }}"
           allowUpdates: true
-          # 如果是 tag 触发，使用 tag 名；如果是手动触发，使用 'latest-manual-build'
           tag: ${{ github.ref_name || 'latest-manual-build' }}
           body: "Auto-generated binaries for ${{ runner.os }}. Built with Nuitka."
           token: ${{ secrets.GITHUB_TOKEN }}
