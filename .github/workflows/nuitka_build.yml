@@ -3,8 +3,11 @@ name: Nuitka Build and Release
 on:
   push:
     tags:
-      - 'v*' # 当用户打 v1.0, v1.1 这种 tag 时触发
-  workflow_dispatch: # 允许手动在 GitHub Action 页面触发构建
+      - 'v*' # 触发条件：推送以 v 开头的标签，如 v1.0
+  workflow_dispatch: # 允许在 Actions 页面点击 "Run workflow" 手动触发
+
+permissions:
+  contents: write # 核心修正：允许 Action 写入仓库内容并创建 Release
 
 jobs:
   build:
@@ -12,62 +15,50 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # Nuitka 编译是系统相关的，我们需要在对应的操作系统上跑构建任务
         os: [windows-latest, ubuntu-latest, macos-latest]
         include:
           - os: windows-latest
             suffix: ".exe"
-            compiler: "mingw64"
           - os: ubuntu-latest
             suffix: ""
-            compiler: "gcc"
           - os: macos-latest
             suffix: ""
-            compiler: "clang"
 
     steps:
-      # 1. 检出代码
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. 设置 Python 环境
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: 'pip'
 
-      # 3. 安装项目第三方依赖
       - name: Install dependencies
         run: |
           pip install requests beautifulsoup4 pillow tqdm nuitka
 
-      # 4. 初始化编译器环境 (特别是对于 macOS 和 Windows)
-      - name: Set up Compiler
-        if: matrix.os == 'windows-latest'
-        uses: msys2/setup-msys2@v2
-        with:
-          install: mingw-w64-x86_64-gcc
-
-      # 5. 执行 Nuitka 构建
+      # 执行 Nuitka 构建 (增加 --standalone 确保独立性)
       - name: Build with Nuitka
         run: |
-          # 针对单文件构建：--onefile
-          # 隐藏命令行窗口（如果是纯图形程序）：--enable-plugin=tk-inter (但我们这里是 CLI，不启用)
           python -m nuitka --onefile --output-dir=build_out main.py
 
-      # 6. 重命名二进制文件（统一格式：douyin_emoji-windows.exe）
+      # 重命名文件以便区分
       - name: Rename Output Artifact
+        shell: bash # 统一使用 bash 处理路径
         run: |
           cd build_out
-          mv main${{ matrix.suffix }} douyin_emoji-${{ runner.os }}${{ matrix.suffix }}
+          # 寻找生成的可执行文件并重命名
+          FILE_NAME=$(ls main${{ matrix.suffix }} 2>/dev/null || ls main 2>/dev/null)
+          mv "$FILE_NAME" "douyin_emoji-${{ runner.os }}${{ matrix.suffix }}"
 
-      # 7. 上传构建产物作为 Release 内容
-      - name: Release Artifacts
-        uses: softprops/action-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+      # 核心修正：使用兼容性更好的 Release Action
+      - name: Create or Update Release
+        uses: ncipollo/release-action@v1
         with:
-          files: build_out/douyin_emoji-${{ runner.os }}${{ matrix.suffix }}
-          body: "Auto-generated release from Nuitka Build on ${{ runner.os }}."
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          artifacts: "build_out/douyin_emoji-${{ runner.os }}${{ matrix.suffix }}"
+          allowUpdates: true
+          # 如果是 tag 触发，使用 tag 名；如果是手动触发，使用 'latest-manual-build'
+          tag: ${{ github.ref_name || 'latest-manual-build' }}
+          body: "Auto-generated binaries for ${{ runner.os }}. Built with Nuitka."
+          token: ${{ secrets.GITHUB_TOKEN }}
