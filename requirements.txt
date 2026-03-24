@@ -2,4 +2,5 @@ requests
 beautifulsoup4
 pillow
 tqdm
-nuitka[onefile]
+nuitka
+zstandard
